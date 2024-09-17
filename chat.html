@@ -44,23 +44,24 @@
                     <p-tab v-for="(c,i) in ['Home','Chat','Config','Help']" :value="`${i}`">{{c}}</p-tab>
                 </p-tablist>
                 <p-tabpanels>
+                    <!-- home GUI -->
                     <p-tabpanel value="0">
                         <div>
-                            <p-select :options="storage.all_chat"
-                                @change="(e)=>{selected_chat = storage.get_chat(e.value[1])}"
+                            <p-select :options="home_GUI_params.all_chats" 
+                                @change="(e)=>{home_GUI_params.change_selected_chat(e)}"
                                 :placeholder="selected_chat.title" />
+                                />
                         </div>
                         <br>
                         <div class="space-x-2">
                             <p-button label="new"
-                                @click="()=>{selected_chat = storage.get_chat(storage.firstchat(null))}"></p-button>
-                            <p-button label="delete" severity="danger" @click="()=>{storage.del_chat(selected_chat.uuid);
-                                                const cs = storage.all_chat.map(c=>c.uuid).pop();
-                                                if(cs)selected_chat = storage.get_chat(cs);}"></p-button>
+                                @click="()=>{home_GUI_params.new_chat()}"></p-button>
+                            <p-button label="delete" severity="danger"
+                                @click="()=>{home_GUI_params.del_chat()}"></p-button>
                         </div>
                     </p-tabpanel>
 
-                    <p-tabpanel value="1">
+                    <!-- <p-tabpanel value="1">
                         <ul class="text-base">
                             <hr>
                             <li v-for="msg in [...storage.get_chat_msgs(selected_chat.uuid).msgs,ai_message]">
@@ -104,8 +105,9 @@
                             </div>
                         </div>
 
-                    </p-tabpanel>
-                    <p-tabpanel value="2">
+                    </p-tabpanel> -->
+
+                    <!-- <p-tabpanel value="2">
                         <div class="card"
                             v-for="config in [...storage.get_chat_configs('Global'),...storage.get_chat_configs(selected_chat.uuid)]">
                             <label :for="config.name"> {{config.what}}</label>
@@ -117,8 +119,9 @@
                             <div v-else-if="config.type=='number'"><p-inputnumber :id="config.name" v-model="config.val"
                                     mode="decimal" showButtons :min="0" :max="100" /></div>
                         </div>
-                    </p-tabpanel>
-                    <p-tabpanel value="3">
+                    </p-tabpanel> -->
+
+                    <!-- <p-tabpanel value="3">
                         <hr>
                         <p class="font-bold">You Configs</p>
                         <div class="card">
@@ -136,7 +139,8 @@
 
                         <p class="font-bold">Back end data in JSON, for restore or backup</p>
                         <div><p-textarea v-model="storage_str" rows="5" cols="40" /></div>
-                    </p-tabpanel>
+                    </p-tabpanel> -->
+                
                 </p-tabpanels>
             </p-tabs>
         </div>
@@ -209,7 +213,7 @@
             }
 
             keys(pattern = '*') {
-                const regex = new RegExp(pattern.replace(/\*/g, '.*'));
+                const regex = new RegExp('^'+pattern.replace(/\*/g, '.*'));
                 return Object.keys(this.model.store.get()).filter(key => key.match(regex));
             }
         }
@@ -375,7 +379,7 @@
             loads(jsonStr) { this.client.loads(jsonStr); }
         }
         // Tests for SingletonKeyValueStorage
-        (async () => {
+        async () => {
             console.log("Testing SingletonKeyValueStorage...");
 
             const storage = new SingletonKeyValueStorage();
@@ -410,7 +414,7 @@
             console.assert(keysAfterClean.length === 0, 'Test 5 Failed: Clean does not clear all keys');
 
             console.log("All tests completed.");
-        })();
+        };
     </script>
 
     <!-- main Part -->
@@ -423,90 +427,202 @@
         }
         const get_now = () => new Date().toISOString();
 
-        storage.load_local_storage = () => {
-            const data = localStorage.getItem('single-file-vue-chat');
-            if (data) {
-                storage.loads(atob(data));
-                return true;
+        {            
+            storage.load_local_storage = () => {
+                // const data = localStorage.getItem('single-file-vue-chat');
+                // if (data) {
+                //     storage.loads(atob(data));
+                //     return true;
+                // }
+                return false;
             }
-            return false;
-        }
 
-        storage.save_local_storage = () => {
-            localStorage.setItem('single-file-vue-chat', btoa(storage.dumps()));
-        }
-        storage.new_chat = async () => {
-            const uuid = `Chat:${gen_uuid()}`;
-            await storage.set(uuid, { title: `Title:${uuid}`, msg_uuids: [], timestamp: get_now(), uuid: uuid });
-            return await storage.get(uuid);
-        };
-        storage.del_chat = async (uuid) => {
-            await storage.get_chat(uuid)?.msg_uuids.forEach(m => storage.del_msg(m));
-            await storage.keys(`^Config:${uuid}:*`).map(k => storage.delete(k));
-            await storage.delete(uuid);
-        }
-        storage.get_chat = async (uuid) => await storage.get(uuid);
-        storage.get_chat_msgs = async (chat_uuid) => { return { msgs: storage.all_msgs(chat_uuid) } }
-        // storage.all_chat = async (uuid) => { return (await storage.keys('^Chat:*')).map(k => storage.get_chat(k)) };        
+            storage.save_local_storage = () => {
+                // localStorage.setItem('single-file-vue-chat', btoa(storage.dumps()));
+            }
+            storage.new_chat = async () => {
+                const uuid = `Chat:${gen_uuid()}`;
+                await storage.set(uuid, { title: `Title:${uuid}`, msg_uuids: [], timestamp: get_now(), uuid: uuid });
+                return await storage.get(uuid);
+            };
+            storage.del_chat = async (uuid) => {
+                const c = await storage.get_chat(uuid);
+                c?.msg_uuids.forEach(async (m) => await storage.del_msg(m));
+                const cg = await storage.keys(`Config:${uuid}:*`);
+                cg.forEach(async (k) => await storage.delete(k));
+                await storage.delete(uuid);
+            }
+            storage.get_chat = async (uuid) => await storage.get(uuid);
+            storage.get_chat_msgs = async (chat_uuid) => { return { msgs: storage.all_msgs(chat_uuid) } }
+            // storage.all_chat = async (uuid) => { return (await storage.keys('Chat:*')).map(k => storage.get_chat(k)) };        
 
-        storage.get_msg = async (uuid) => await storage.get(uuid);
-        storage.add_msg = async (chat_uuid, { role, content }) => {
-            const uuid = `Message:${gen_uuid()}`;
-            (await storage.get_chat(chat_uuid)).msg_uuids.push(uuid);
-            await storage.set(uuid, { role: role, content: content, timestamp: get_now(), uuid: uuid, chat: chat_uuid });
-        };
-        storage.add_img = async (chat_uuid, { role, content }) => {
-            const uuid = `Message:${gen_uuid()}`;
-            (await storage.get_chat(chat_uuid)).msg_uuids.push(uuid);
-            await storage.set(uuid, { role: role, content: content, timestamp: get_now(), uuid: uuid, chat: chat_uuid, is_img: true });
-        };
-        storage.del_msg = async (msg_uuid) => {
-            const msg = await storage.get_msg(msg_uuid);
-            const chat = await storage.get_chat(msg.chat);
-            chat.msg_uuids = chat.msg_uuids.filter(m_uuid => m_uuid != msg_uuid);
-            await storage.delete(msg_uuid);
-        };
-        storage.all_msgs = async (chat_uuid) => {
-            const chat = await storage.get_chat(chat_uuid);
-            return chat ? await chat.msg_uuids.map(m_uuid => storage.get_msg(m_uuid)) : [];
-        };
+            storage.get_msg = async (uuid) => await storage.get(uuid);
+            storage.add_msg = async (chat_uuid, { role, content }) => {
+                const uuid = `Message:${gen_uuid()}`;
+                (await storage.get_chat(chat_uuid)).msg_uuids.push(uuid);
+                await storage.set(uuid, { role: role, content: content, timestamp: get_now(), uuid: uuid, chat: chat_uuid });
+            };
+            storage.add_img = async (chat_uuid, { role, content }) => {
+                const uuid = `Message:${gen_uuid()}`;
+                (await storage.get_chat(chat_uuid)).msg_uuids.push(uuid);
+                await storage.set(uuid, { role: role, content: content, timestamp: get_now(), uuid: uuid, chat: chat_uuid, is_img: true });
+            };
+            storage.del_msg = async (msg_uuid) => {
+                const msg = await storage.get_msg(msg_uuid);
+                const chat = await storage.get_chat(msg.chat);
+                chat.msg_uuids = chat.msg_uuids.filter(m_uuid => m_uuid != msg_uuid);
+                await storage.delete(msg_uuid);
+            };
+            storage.all_msgs = async (chat_uuid) => {
+                const chat = await storage.get_chat(chat_uuid);
+                return chat ? await chat.msg_uuids.map(m_uuid => storage.get_msg(m_uuid)) : [];
+            };
 
-        storage.set_chat_config = async (chat_uuid, name, val, what) => {
-            await storage.set(`Config:${chat_uuid}:${name}`, { name: name, val: val, what: what, type: typeof (val) });
-            return await storage.get_chat_config(chat_uuid, name);
-        }
-        storage.get_chat_config = async (chat_uuid, name) => await storage.get(`Config:${chat_uuid}:${name}`);
-        storage.get_chat_configs = async (chat_uuid) => await storage.keys(`^Config:${chat_uuid}:*`).map(k => storage.get(k));
+            storage.set_chat_config = async (chat_uuid, name, val, what) => {
+                await storage.set(`Config:${chat_uuid}:${name}`, { name: name, val: val, what: what, type: typeof (val) });
+                return await storage.get_chat_config(chat_uuid, name);
+            }
+            storage.get_chat_config = async (chat_uuid, name) => await storage.get(`Config:${chat_uuid}:${name}`);
+            storage.get_chat_configs = async (chat_uuid) => await storage.keys(`Config:${chat_uuid}:*`).map(k => storage.get(k));
 
-        storage.firstchat = async (title = 'Hello!') => {
-            const chat = await storage.new_chat();
-            if (title) chat.title = title;
-            else chat.title = chat.uuid;
-            await storage.add_msg(chat.uuid, { role: 'user', content: 'hi' });
-            await storage.add_msg(chat.uuid, { role: 'assistant', content: "I'm ready to assist you. What do you need help with?" });
+            storage.firstchat = async (title = 'Hello!') => {
+                const chat = await storage.new_chat();
+                if (title) chat.title = title;
+                else chat.title = chat.uuid;
+                await storage.add_msg(chat.uuid, { role: 'user', content: 'hi' });
+                await storage.add_msg(chat.uuid, { role: 'assistant', content: "I'm ready to assist you. What do you need help with?" });
 
-            await storage.set_chat_config(chat.uuid, 'sysp', 'You are a helpful assistant.', 'System Prompt');
-            await storage.set_chat_config(chat.uuid, 'modelname', 'gpt-4o-mini', 'Model Name');
-            await storage.set_chat_config(chat.uuid, 'sendlast', 4, 'Send last messages');
-            await storage.set_chat_config(chat.uuid, 'url', 'https://api.openai.com/v1/chat/completions', 'API URL');
-            return chat.uuid;
+                await storage.set_chat_config(chat.uuid, 'sysp', 'You are a helpful assistant.', 'System Prompt');
+                await storage.set_chat_config(chat.uuid, 'modelname', 'gpt-4o-mini', 'Model Name');
+                await storage.set_chat_config(chat.uuid, 'sendlast', 4, 'Send last messages');
+                await storage.set_chat_config(chat.uuid, 'url', 'https://api.openai.com/v1/chat/completions', 'API URL');
+                return chat.uuid;
+            }
+            
         }
 
         const app = createApp({
             setup() {
+
+                const selected_chat = ref({ title: `null`, msg_uuids: [], timestamp: get_now(), uuid: null });
+                const set_selected_chat = (c) => {
+                    selected_chat.value.title=c.title;
+                    selected_chat.value.msg_uuids=c.msg_uuids;
+                    selected_chat.value.timestamp=c.timestamp;
+                    selected_chat.value.uuid=c.uuid;
+                }
+
+                class HomeViewModel{
+                    constructor(){
+                        this.all_chats=ref([]);
+                    }
+                    async load_all_chat(){
+                        const res = await storage.keys('Chat:*');
+                        const data = res.map(async (k) => {return await storage.get_chat(k)});
+                        this.all_chats = [];
+                        this.all_chats = await Promise.all(data);
+                    }
+                    async change_selected_chat(e){
+                        set_selected_chat(await storage.get_chat(e.value.uuid));
+                    }
+                    
+                    async new_chat(){
+                        const uuid = await storage.firstchat(null);
+                        const c = await storage.get_chat(uuid);
+                        set_selected_chat(c);
+                        await this.load_all_chat();
+                    }
+
+                    async del_chat(){
+                        await storage.del_chat(selected_chat.value.uuid);
+                        this.load_all_chat().then(async ()=>{                            
+                            const cs = this.all_chats.map(c=>c.uuid).pop();
+                            if(cs){                            
+                                set_selected_chat(await storage.get_chat(cs));
+                            }
+                            else{
+                                set_selected_chat({ title: `null`, msg_uuids: [], timestamp: get_now(), uuid: null })
+                            }
+                        }
+                        )
+                    }
+                }
+                const home_GUI_params = new HomeViewModel();
+
+                class ChatViewModel{
+                    constructor(){
+                        this.all_msgs = ref([]);
+                    }
+                    async get_all_msgs(){
+                        const ms = await storage.get_chat_msgs(selected_chat.uuid);
+                        const msgs = [...ms.msgs,ai_message];           
+                        this.all_msgs.value = msgs;             
+                    }
+                    async del_msg(msg){
+                        await storage.del_msg(msg.uuid);
+                    }
+                    // <!-- <p-tabpanel value="1">
+                    //     <ul class="text-base">
+                    //         <hr>
+                    //         <li v-for="msg in [...storage.get_chat_msgs(selected_chat.uuid).msgs,ai_message]">
+                    //             <div v-if="msg.content&&msg.content.length>0">
+                    //                 <div class="markdown-body">
+                    //                     <div v-if="msg.is_img">
+                    //                         <p class="font-bold">{{msg.role}} :</p><img
+                    //                             :src="`data:image/jpeg;base64,${msg.content}`">
+                    //                     </div>
+                    //                     <div v-else v-html="markdown_config.render(`**${msg.role}** : ${msg.content}`)">
+                    //                     </div>
+                    //                 </div>
+                    //                 <div class="flex justify-end">
+                    //                     <i class="pi pi-replay hover:text-blue-500 hover:scale-110 transition duration-200"
+                    //                         @click="history_repush(msg)"></i>
+                    //                     <i class="pi pi-trash pi pi-replay hover:text-blue-500 hover:scale-110 transition duration-200"
+                    //                         @click="()=>storage.del_msg(msg.uuid)"></i>
+                    //                     <span class="italic text-xs">{{msg.timestamp}}</span>
+                    //                 </div>
+                    //                 <hr>
+                    //             </div>
+                    //         </li>
+                    //     </ul><br>
+                    //     <hr>
+                    //     <hr><br>
+
+                    //     <div class="flex items-center space-x-2 p-2 border border-gray-300 rounded-lg shadow-sm">
+                    //         <p-inputtext v-model="user_message.content" class="w-full"
+                    //             placeholder="Type something for AI..."></p-inputtext>
+                    //         <p-button label="Send" @click="sendmsg"></p-button>
+                    //     </div>
+
+                    //     <div class="flex items-center space-x-2 p-2 border border-gray-300 rounded-lg shadow-sm">
+                    //         <div>
+                    //             <span class="font-medium">Image:</span>
+                    //             <p-toggleswitch v-model="image_on" class="ml-2"></p-toggleswitch>
+                    //         </div>
+                    //         <div v-if="image_on">
+                    //             <input type="file" name="test" onchange="previewFile(this)" accept="image/*">
+                    //             <img id="preview">
+                    //         </div>
+                    //     </div>
+
+                    // </p-tabpanel> -->
+
+                }
+
                 if (!storage.load_local_storage()) {
                     storage.set_chat_config('Global', 'apikey', 'sk-', 'API Key');
-                    storage.firstchat();
+                    storage.firstchat().then(() => {
+                        home_GUI_params.load_all_chat();
+                    });
                 }
+                home_GUI_params.load_all_chat();
+                window.home_GUI_params = home_GUI_params;
 
                 const commands = ref({});
                 // const selected_chat = ref(storage.all_chat[0]);
                 storage.all_chat = computed({
-                    async get() { return (await storage.keys('^Chat:*')).map(k => storage.get_chat(k)) }
-                });                
-                const selected_chat =  computed({
-                    async get() { return (await storage.all_chat)[0]; },
-                });
+                    async get() { return (await storage.keys('Chat:*')).map(k => storage.get_chat(k)) }
+                });               
                 selected_chat.get = () => selected_chat.value;
 
                 storage.set_chat_config('Global', 'darkmode', true, 'Darkmode');
@@ -657,6 +773,7 @@
                 });
                 const image_on = ref(false);
                 return {
+                    home_GUI_params,
                     storage, storage_str, selected_chat, markdown_config, image_on,
                     user_message, ai_message,
                     sendmsg, showInfo, history_repush, openaibody, get_config, command_darkmode,

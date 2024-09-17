@@ -1653,7 +1653,6 @@ class ChatRoom:
                 res.append(self.msgsDict(False,self.get_messages_in_group(v.get_id())))
         return res
 
-
     def printMsgs(self,refresh=False,intent=0,msgs:List[Model4LLM.AbstractContent]=None):
         if refresh:
             self.msgs:List[Model4LLM.AbstractContent] = self.get_messages_in_group()
