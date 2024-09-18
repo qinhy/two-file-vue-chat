@@ -59,7 +59,9 @@ class SingletonStorageController:
     def loads(self, json_string=r'{}'): [ self.set(k,v) for k,v in json.loads(json_string).items()]
 
     def dump(self,path):
-        with open(path, "w") as tf: tf.write(self.dumps())
+        data = self.dumps()
+        with open(path, "w") as tf: tf.write(data)
+        return data
 
     def load(self,path):
         with open(path, "r") as tf: self.loads(tf.read())
@@ -678,6 +680,36 @@ class KeysHistoryController:
             if res : self.set_history(key,res)
         return res
 
+class LocalVersionController:
+    def __init__(self, client=None):
+        if client is None:
+            client = SingletonPythonDictStorageController(PythonDictStorage())
+        self.client:SingletonStorageController = client
+
+    def _str2base64(self,key: str):
+        return base64.b64encode(key.encode()).decode()
+    
+    def add_operation(self,operation:dict):
+        ophash = self._str2base64(json.dumps(operation))
+        self.client.set(f'_Operation:{ophash}',{'forward':operation,'revert':None})
+        ops = self.client.get(f'_Operations')
+        ops.append(ophash)
+        self.client.set(f'_Operations',ops)
+    
+    def revert_one_operation(self):
+        ops = self.client.get(f'_Operations')
+        ophash = ops[-1]
+        op = self.client.get(f'_Operation:{ophash}')
+        revert = op['revert']
+        
+        # do revert
+
+        ops.pop()
+        self.client.set(f'_Operations',ops)
+
+    def revert_operations_untill(self,ophash):
+        pass
+
 class SingletonKeyValueStorage(SingletonStorageController):
 
     def __init__(self)->None:
@@ -753,19 +785,22 @@ class SingletonKeyValueStorage(SingletonStorageController):
         return res
     
     def _try_if_error(self,func):
+        res = False
         try:
             func()
-            return True
+            res =  True
         except Exception as e:
             self._print(e)
             return False
+        if res:
+            pass
+        return res
     # True False(in error)
     def set(self, key: str, value: dict):     return self._try_if_error(lambda:self._edit('set',key,value))
     def delete(self, key: str):               return self._try_if_error(lambda:self._edit('delete',key))
     def clean(self):                          return self._try_if_error(lambda:self._edit('clean'))
     def load(self,json_path):                 return self._try_if_error(lambda:self._edit('load', json_path))
     def loads(self,json_str):                 return self._try_if_error(lambda:self._edit('loads',json_str))
-    def dump(self,json_path):                 return self._try_if_error(lambda:self.conn.dump(json_path))
     
     def _try_obj_error(self,func):
         try:
@@ -780,6 +815,7 @@ class SingletonKeyValueStorage(SingletonStorageController):
     def keys(self, regx: str='*')->list[str]: return self._try_obj_error(lambda:self.conn.keys(regx))
     def get(self, key: str)->dict:            return self._try_obj_error(lambda:self.conn.get(key))
     def dumps(self)->str:                     return self._try_obj_error(lambda:self.conn.dumps())
+    def dump(self,json_path):                 return self._try_obj_error(lambda:self.conn.dump(json_path))
 
 class Tests(unittest.TestCase):
     def __init__(self,*args,**kwargs)->None:

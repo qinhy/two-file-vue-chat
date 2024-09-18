@@ -47,8 +47,8 @@
                     <!-- home GUI -->
                     <p-tabpanel value="0">
                         <div>
-                            <p-select :options="home_GUI_params.all_chats" 
-                                @change="(e)=>{home_GUI_params.change_selected_chat(e)}"
+                            <p-select :options="home_GUI_params.all_chats.value" 
+                                @change="(e)=>{home_GUI_params.change_selected_chat(e);chat_GUI_params.get_all_msgs();}"
                                 :placeholder="selected_chat.title" />
                                 />
                         </div>
@@ -61,10 +61,10 @@
                         </div>
                     </p-tabpanel>
 
-                    <!-- <p-tabpanel value="1">
+                    <p-tabpanel value="1">
                         <ul class="text-base">
                             <hr>
-                            <li v-for="msg in [...storage.get_chat_msgs(selected_chat.uuid).msgs,ai_message]">
+                            <li v-for="msg in chat_GUI_params.all_msgs.value">
                                 <div v-if="msg.content&&msg.content.length>0">
                                     <div class="markdown-body">
                                         <div v-if="msg.is_img">
@@ -105,7 +105,7 @@
                             </div>
                         </div>
 
-                    </p-tabpanel> -->
+                    </p-tabpanel>
 
                     <!-- <p-tabpanel value="2">
                         <div class="card"
@@ -453,18 +453,22 @@
                 await storage.delete(uuid);
             }
             storage.get_chat = async (uuid) => await storage.get(uuid);
-            storage.get_chat_msgs = async (chat_uuid) => { return { msgs: storage.all_msgs(chat_uuid) } }
+            storage.get_chat_msgs = async (chat_uuid) => { return await storage.all_msgs(chat_uuid) }
             // storage.all_chat = async (uuid) => { return (await storage.keys('Chat:*')).map(k => storage.get_chat(k)) };        
 
             storage.get_msg = async (uuid) => await storage.get(uuid);
             storage.add_msg = async (chat_uuid, { role, content }) => {
                 const uuid = `Message:${gen_uuid()}`;
-                (await storage.get_chat(chat_uuid)).msg_uuids.push(uuid);
+                const chat = await storage.get_chat(chat_uuid);
+                chat.msg_uuids.push(uuid);
+                await storage.set(chat.uuid, { ...chat });
                 await storage.set(uuid, { role: role, content: content, timestamp: get_now(), uuid: uuid, chat: chat_uuid });
             };
             storage.add_img = async (chat_uuid, { role, content }) => {
                 const uuid = `Message:${gen_uuid()}`;
-                (await storage.get_chat(chat_uuid)).msg_uuids.push(uuid);
+                const chat = await storage.get_chat(chat_uuid);
+                chat.msg_uuids.push(uuid);
+                await storage.set(chat.uuid, { ...chat });
                 await storage.set(uuid, { role: role, content: content, timestamp: get_now(), uuid: uuid, chat: chat_uuid, is_img: true });
             };
             storage.del_msg = async (msg_uuid) => {
@@ -475,7 +479,9 @@
             };
             storage.all_msgs = async (chat_uuid) => {
                 const chat = await storage.get_chat(chat_uuid);
-                return chat ? await chat.msg_uuids.map(m_uuid => storage.get_msg(m_uuid)) : [];
+                if(!chat)return [];
+                const msgs = await Promise.all(await chat.msg_uuids.map(m_uuid => storage.get_msg(m_uuid)));
+                return msgs;
             };
 
             storage.set_chat_config = async (chat_uuid, name, val, what) => {
@@ -519,8 +525,8 @@
                     async load_all_chat(){
                         const res = await storage.keys('Chat:*');
                         const data = res.map(async (k) => {return await storage.get_chat(k)});
-                        this.all_chats = [];
-                        this.all_chats = await Promise.all(data);
+                        this.all_chats.value.splice(0);
+                        (await Promise.all(data)).forEach(e=>this.all_chats.value.push(e));
                     }
                     async change_selected_chat(e){
                         set_selected_chat(await storage.get_chat(e.value.uuid));
@@ -536,7 +542,7 @@
                     async del_chat(){
                         await storage.del_chat(selected_chat.value.uuid);
                         this.load_all_chat().then(async ()=>{                            
-                            const cs = this.all_chats.map(c=>c.uuid).pop();
+                            const cs = this.all_chats.value.filter(c=>c).map(c=>c.uuid).pop();
                             if(cs){                            
                                 set_selected_chat(await storage.get_chat(cs));
                             }
@@ -554,9 +560,12 @@
                         this.all_msgs = ref([]);
                     }
                     async get_all_msgs(){
-                        const ms = await storage.get_chat_msgs(selected_chat.uuid);
-                        const msgs = [...ms.msgs,ai_message];           
-                        this.all_msgs.value = msgs;             
+                        this.all_msgs.value.splice(0);
+                        const ms = await storage.get_chat_msgs(selected_chat.value.uuid);
+                        ms.forEach(e=>this.all_msgs.value.push(e));
+                        ms.push(ai_message.value);
+                        console.log(ms);
+                        return ms;
                     }
                     async del_msg(msg){
                         await storage.del_msg(msg.uuid);
@@ -606,8 +615,9 @@
                     //     </div>
 
                     // </p-tabpanel> -->
-
                 }
+                const chat_GUI_params = new ChatViewModel();
+                window.chat_GUI_params = chat_GUI_params;
 
                 if (!storage.load_local_storage()) {
                     storage.set_chat_config('Global', 'apikey', 'sk-', 'API Key');
@@ -657,7 +667,7 @@
                 const openaibody = async(sysp = null) => {
                     const body = { model: get_config('modelname'), stream: true }
                     body.messages = [{ role: 'system', content: get_config('sysp') },
-                    ...await storage.get_chat_msgs(selected_chat.get()?.uuid)?.msgs];
+                    ...await storage.get_chat_msgs(selected_chat.get()?.uuid)];
                     if (!sysp) sysp = body.messages[0];
 
                     body.messages = [sysp, ...body.messages.filter(m => m.timestamp).slice(-parseInt(get_config('sendlast')))]
@@ -773,7 +783,7 @@
                 });
                 const image_on = ref(false);
                 return {
-                    home_GUI_params,
+                    home_GUI_params,chat_GUI_params,
                     storage, storage_str, selected_chat, markdown_config, image_on,
                     user_message, ai_message,
                     sendmsg, showInfo, history_repush, openaibody, get_config, command_darkmode,
