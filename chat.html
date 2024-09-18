@@ -44,27 +44,26 @@
                     <p-tab v-for="(c,i) in ['Home','Chat','Config','Help']" :value="`${i}`">{{c}}</p-tab>
                 </p-tablist>
                 <p-tabpanels>
-                    <!-- home GUI -->
                     <p-tabpanel value="0">
                         <div>
-                            <p-select :options="home_GUI_params.all_chats.value" 
-                                @change="(e)=>{home_GUI_params.change_selected_chat(e);chat_GUI_params.get_all_msgs();}"
+                            <p-select :options="storage.all_chat().map(c=>[c.title,c.uuid])"
+                                @change="(e)=>{selected_chat = storage.get_chat(e.value[1])}"
                                 :placeholder="selected_chat.title" />
-                                />
                         </div>
                         <br>
                         <div class="space-x-2">
                             <p-button label="new"
-                                @click="()=>{home_GUI_params.new_chat()}"></p-button>
-                            <p-button label="delete" severity="danger"
-                                @click="()=>{home_GUI_params.del_chat()}"></p-button>
+                                @click="()=>{selected_chat = storage.get_chat(storage.firstchat(null))}"></p-button>
+                            <p-button label="delete" severity="danger" @click="()=>{storage.del_chat(selected_chat.uuid);
+                                                const cs = storage.all_chat().map(c=>c.uuid).pop();
+                                                if(cs)selected_chat = storage.get_chat(cs);}"></p-button>
                         </div>
                     </p-tabpanel>
 
                     <p-tabpanel value="1">
                         <ul class="text-base">
                             <hr>
-                            <li v-for="msg in chat_GUI_params.all_msgs.value">
+                            <li v-for="msg in [...storage.get_chat_msgs(selected_chat.uuid).msgs,ai_message]">
                                 <div v-if="msg.content&&msg.content.length>0">
                                     <div class="markdown-body">
                                         <div v-if="msg.is_img">
@@ -106,8 +105,7 @@
                         </div>
 
                     </p-tabpanel>
-
-                    <!-- <p-tabpanel value="2">
+                    <p-tabpanel value="2">
                         <div class="card"
                             v-for="config in [...storage.get_chat_configs('Global'),...storage.get_chat_configs(selected_chat.uuid)]">
                             <label :for="config.name"> {{config.what}}</label>
@@ -119,9 +117,8 @@
                             <div v-else-if="config.type=='number'"><p-inputnumber :id="config.name" v-model="config.val"
                                     mode="decimal" showButtons :min="0" :max="100" /></div>
                         </div>
-                    </p-tabpanel> -->
-
-                    <!-- <p-tabpanel value="3">
+                    </p-tabpanel>
+                    <p-tabpanel value="3">
                         <hr>
                         <p class="font-bold">You Configs</p>
                         <div class="card">
@@ -139,30 +136,30 @@
 
                         <p class="font-bold">Back end data in JSON, for restore or backup</p>
                         <div><p-textarea v-model="storage_str" rows="5" cols="40" /></div>
-                    </p-tabpanel> -->
-                
+                    </p-tabpanel>
                 </p-tabpanels>
             </p-tabs>
         </div>
         <p-toast />
     </div>
     </div>
+    
+    <script>
+        function previewFile(hoge) {
+            var fileData = new FileReader();
+            fileData.onload = (function () {
+                document.getElementById('preview').src = fileData.result;
+            });
+            fileData.readAsDataURL(hoge.files[0]);
+        }
+    </script>
 
     <!-- Back end storage Part -->
-    <script>
-        const { createApp, ref, computed } = Vue;
+    <script>// A utility function to handle errors in JavaScript
         class SingletonStorageController {
-            add_slave(slave) { this.model.slaves.push(slave); }
-            _set_slaves(key, value) {
-                this.model.slaves.forEach(slave => {
-                    if (slave.set) { slave.set(key, value); }
-                });
-            }
-            _delete_slaves(key) {
-                this.model.slaves.forEach(slave => {
-                    if (slave.delete) { slave.delete(key); }
-                });
-            }
+            constructor(model) {
+                this.model = model;  // Assuming model is an object
+            }    
             exists(key) { console.log(`[${this.constructor.name}]: not implemented`); }
             set(key, value) { console.log(`[${this.constructor.name}]: not implemented`); }
             get(key) { console.log(`[${this.constructor.name}]: not implemented`); }
@@ -170,54 +167,424 @@
             keys(pattern = '*') { console.log(`[${this.constructor.name}]: not implemented`); }
             clean() { this.keys('*').forEach(k => this.delete(k)); }
             dumps() { var res = {}; this.keys('*').forEach(k => res[k] = this.get(k)); return JSON.stringify(res); }
-            loads(jsonString = '{}') {
-                this.clean();
-                const data = JSON.parse(jsonString);
-                Object.entries(data).forEach(d => this.set(d[0], d[1]));
+            loads(jsonString = '{}') { this.clean(); Object.entries(JSON.parse(jsonString)).forEach(d => this.set(d[0], d[1])); }
+        
+            _randuuid(prefix = '') {
+                return prefix + 'xxxx-xxxx-xxxx-xxxx-xxxx'.replace(/x/g, function () {
+                    return Math.floor(Math.random() * 16).toString(16);
+                });
             }
         }
-
-        class SingletonVueStorage {
+        class JavascriptDictStorage {
+            constructor() {
+                this.uuid = this._randuuid();
+                this.store = {};
+            }
+            _randuuid(prefix = '') {
+                return prefix + 'xxxx-xxxx-xxxx-xxxx-xxxx'.replace(/x/g, function () {
+                    return Math.floor(Math.random() * 16).toString(16);
+                });
+            }
+            get() {
+                return this.store;
+            }
+        }
+        class SingletonJavascriptDictStorage {
             static _instance = null;
             static _meta = {};
-
+        
             constructor() {
-                if (!SingletonVueStorage._instance) {
-                    SingletonVueStorage._instance = this;
-                    this.store = ref({});
-                    this.store.get = () => this.store.value;
-                    this.slaves = [];
+                if (!SingletonJavascriptDictStorage._instance) {
+                    SingletonJavascriptDictStorage._instance = this;
+                    this.store = {};
                 }
-                return SingletonVueStorage._instance;
+                return SingletonJavascriptDictStorage._instance;
+            }
+            get() {
+                return this.store;
             }
         }
-
-        class SingletonVueStorageController extends SingletonStorageController {
+        
+        class SingletonJavascriptDictStorageController extends SingletonStorageController {
             constructor(model) {
                 super();
                 this.model = model;
             }
-
-            exists(key) { return key in this.model.store.get(); }
-
+        
+            exists(key) { return key in this.model.get(); }
+        
             set(key, value) {
-                this.model.store.get()[key] = value;
-                this._set_slaves(key, value);
+                this.model.get()[key] = value;
             }
-
-            get(key) { return this.model.store.get()[key] || null; }
-
+        
+            get(key) { return this.model.get()[key] || null; }
+        
             delete(key) {
-                if (key in this.model.store.get()) { delete this.model.store.get()[key]; }
-                this._delete_slaves(key);
+                if (key in this.model.get()) { delete this.model.get()[key]; }
             }
-
+        
             keys(pattern = '*') {
                 const regex = new RegExp('^'+pattern.replace(/\*/g, '.*'));
-                return Object.keys(this.model.store.get()).filter(key => key.match(regex));
+                return Object.keys(this.model.get()).filter(key => key.match(regex));
+            }
+        }
+                
+        class EventDispatcherController {
+            static ROOT_KEY = 'Event';
+        
+            constructor(client = null) {
+                if (client === null) {
+                    client = new SingletonJavascriptDictStorageController(new JavascriptDictStorage());
+                }
+                this.client = client;
+            }
+        
+            events() {
+                return this.client.keys('*').map(k => [k, this.client.get(k)]);
+            }
+        
+            _find_event(uuid) {
+                const es = this.client.keys(`*:${uuid}`);
+                return es.length === 0 ? [null] : es;
+            }
+        
+            get_event(uuid) {
+                return this._find_event(uuid).map(k => this.client.get(k));
+            }
+        
+            delete_event(uuid) {
+                return this._find_event(uuid).forEach(k => this.client.delete(k));
+            }
+        
+            set_event(event_name, callback, id = null) {
+                if (id === null) id = this.client._randuuid();
+                this.client.set(`${EventDispatcherController.ROOT_KEY}:${event_name}:${id}`, callback);
+                return id;
+            }
+        
+            dispatch(event_name, ...args) {
+                this.client.keys(`${EventDispatcherController.ROOT_KEY}:${event_name}:*`).forEach(event_full_uuid => {
+                    this.client.get(event_full_uuid)(...args);
+                });
+            }
+
+            async async_dispatch(event_name, ...args) {
+                return await Promise.all(
+                    this.client.keys(`${EventDispatcherController.ROOT_KEY}:${event_name}:*`).map(
+                        async(event_full_uuid) => this.client.get(event_full_uuid)(...args))
+                    );
+            }
+        
+            clean() {
+                return this.client.clean();
             }
         }
         
+        class KeysHistoryController {
+            constructor(client = null) {
+                if (client === null) {
+                    client = new SingletonJavascriptDictStorageController(new JavascriptDictStorage());
+                }
+                this.client = client;
+            }
+        
+            _str2base64(key) {
+                return btoa(key);
+            }
+        
+            reset() {
+                this.client.set('_History:', {});
+            }
+        
+            set_history(key, result) {
+                if (result) {
+                    this.client.set(`_History:${this._str2base64(key)}`, { result });
+                }
+                return result;
+            }
+        
+            get_history(key) {
+                const res = this.client.get(`_History:${this._str2base64(key)}`);
+                return res ? res.result : null;
+            }
+        
+            try_history(key, result_func = () => null) {
+                let res = this.get_history(key);
+                if (res === null) {
+                    res = result_func();
+                    if (res) this.set_history(key, res);
+                }
+                return res;
+            }
+        }
+        
+        class LocalVersionController {
+            constructor(client = null) {
+                if (client === null) {
+                    client = new SingletonJavascriptDictStorageController(new JavascriptDictStorage());
+                }
+                this.client = client;
+                this.client.set('_Operations', { ops: [] });
+            }
+        
+            add_operation(operation, revert = null) {
+                const opuuid = this.client._randuuid();
+                this.client.set(`_Operation:${opuuid}`, { forward: operation, revert: revert });
+                const ops = this.client.get('_Operations');
+                ops.ops.push(opuuid);
+                this.client.set('_Operations', ops);
+            }
+        
+            revert_one_operation(revertCallback) {
+                const ops = this.client.get('_Operations').ops;
+                const opuuid = ops[ops.length - 1];
+                const op = this.client.get(`_Operation:${opuuid}`);
+                const revert = op.revert;
+                // Perform revert
+                revertCallback(revert);
+                ops.pop();
+                this.client.set('_Operations', { ops: ops });
+            }
+        
+            get_versions() {
+                return this.client.get('_Operations').ops;
+            }
+        
+            revert_operations_untill(opuuid, revertCallback) {
+                const ops = [...this.client.get('_Operations').ops];
+                if (ops.includes(opuuid)) {
+                    for (let i = ops.length - 1; i >= 0; i--) {
+                        if (ops[i] === opuuid) break;
+                        this.revert_one_operation(revertCallback);
+                    }
+                } else {
+                    throw new Error(`No such version of ${opuuid}`);
+                }
+            }
+        }
+                
+        class SingletonVueStorage {
+            static _instance = null;
+            static _meta = {};
+        
+            constructor() {
+                if (!SingletonVueStorage._instance) {
+                    SingletonVueStorage._instance = this;
+                    if (Vue) {
+                        console.log("add Vue support")
+                        const { ref } = Vue;
+                        this.store = ref({});
+                    }
+                    else {
+                        console.log("no Vue support")
+                        this.store = null;
+                    }
+        
+                }
+                return SingletonVueStorage._instance;
+            }
+            get() {
+                return this.store.value;
+            }
+        }
+        
+        class SingletonVueStorageController extends SingletonJavascriptDictStorageController {
+            constructor(model) {
+                super();
+                this.model = model;
+            }
+        }
+        
+        class SingletonIndexedDBStorage {
+            static _instance = null;
+            static dbName = 'SingletonIndexedDBStorageDatabase';
+            static storeName = 'SingletonIndexedDBStorage';
+        
+            constructor() {
+                if (!SingletonIndexedDBStorage._instance) {
+                    SingletonIndexedDBStorage._instance = this;
+                    this.dbPromise = this.initializeDB();
+                }
+                return SingletonIndexedDBStorage._instance;
+            }
+        
+            initializeDB() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(SingletonIndexedDBStorage.dbName, 1);
+                    request.onerror = (event) => reject('Database error: ' + event.target.errorCode);
+                    request.onupgradeneeded = (event) => {
+                        const db = event.target.result;
+                        if (!db.objectStoreNames.contains(SingletonIndexedDBStorage.storeName)) {
+                            db.createObjectStore(SingletonIndexedDBStorage.storeName, { keyPath: 'id' });
+                        }
+                    };
+                    request.onsuccess = (event) => resolve(event.target.result);
+                });
+            }
+        
+            getDB() {
+                return this.dbPromise;
+            }
+        }
+        
+        class SingletonIndexedDBStorageController extends SingletonStorageController {
+            constructor(model) {
+                super();
+                this.model = model;
+            }
+        
+            exists(key) {
+                return this.model.getDB().then(db => {
+                    const transaction = db.transaction([SingletonIndexedDBStorage.storeName]);
+                    const objectStore = transaction.objectStore(SingletonIndexedDBStorage.storeName);
+                    const request = objectStore.get(key);
+                    return new Promise((resolve, reject) => {
+                        request.onsuccess = () => resolve(request.result !== undefined);
+                        request.onerror = () => reject(request.error);
+                    });
+                });
+            }
+        
+            set(key, value) {
+                return this.model.getDB().then(db => {
+                    const transaction = db.transaction([SingletonIndexedDBStorage.storeName], 'readwrite');
+                    const objectStore = transaction.objectStore(SingletonIndexedDBStorage.storeName);
+                    const request = objectStore.put({ id: key, value: value });
+                    return new Promise((resolve, reject) => {
+                        request.onsuccess = () => {
+                            resolve();
+                        };
+                        request.onerror = () => reject(request.error);
+                    });
+                });
+            }
+        
+            get(key) {
+                return this.model.getDB().then(db => {
+                    const transaction = db.transaction([SingletonIndexedDBStorage.storeName]);
+                    const objectStore = transaction.objectStore(SingletonIndexedDBStorage.storeName);
+                    const request = objectStore.get(key);
+                    return new Promise((resolve, reject) => {
+                        request.onsuccess = () => resolve(request.result ? request.result.value : null);
+                        request.onerror = () => reject(request.error);
+                    });
+                });
+            }
+        
+            delete(key) {
+                return this.model.getDB().then(db => {
+                    const transaction = db.transaction([SingletonIndexedDBStorage.storeName], 'readwrite');
+                    const objectStore = transaction.objectStore(SingletonIndexedDBStorage.storeName);
+                    const request = objectStore.delete(key);
+                    return new Promise((resolve, reject) => {
+                        request.onsuccess = () => {
+                            resolve();
+                        };
+                        request.onerror = () => reject(request.error);
+                    });
+                });
+            }
+        
+            keys(pattern = '*') {
+                return this.model.getDB().then(db => {
+                    const transaction = db.transaction([SingletonIndexedDBStorage.storeName]);
+                    const objectStore = transaction.objectStore(SingletonIndexedDBStorage.storeName);
+                    const request = objectStore.openCursor();
+                    const regex = new RegExp(pattern.replace(/\*/g, '.*'));
+                    const keys = [];
+        
+                    return new Promise((resolve, reject) => {
+                        request.onsuccess = (event) => {
+                            const cursor = event.target.result;
+                            if (cursor) {
+                                if (cursor.key.match(regex)) {
+                                    keys.push(cursor.key);
+                                }
+                                cursor.continue();
+                            } else {
+                                resolve(keys);
+                            }
+                        };
+                        request.onerror = () => reject(request.error);
+                    });
+                });
+            }
+        
+            clean() {
+                return this.model.getDB().then(db => {
+                    const transaction = db.transaction([SingletonIndexedDBStorage.storeName], 'readwrite');
+                    const objectStore = transaction.objectStore(SingletonIndexedDBStorage.storeName);
+                    const request = objectStore.openCursor();
+        
+                    return new Promise((resolve, reject) => {
+                        request.onsuccess = (event) => {
+                            const cursor = event.target.result;
+                            if (cursor) {
+                                // Delete each entry one by one
+                                const deleteRequest = cursor.delete();
+                                deleteRequest.onsuccess = () => {
+                                    cursor.continue();
+                                };
+                                deleteRequest.onerror = () => reject(deleteRequest.error);
+                            } else {
+                                // No more entries to delete
+                                resolve();
+                            }
+                        };
+                        request.onerror = () => reject(request.error);
+                    });
+                });
+            }
+        
+            // Dumps all data from the store to a JSON string
+            dumps() {
+                return this.model.getDB().then(db => {
+                    const transaction = db.transaction([SingletonIndexedDBStorage.storeName]);
+                    const objectStore = transaction.objectStore(SingletonIndexedDBStorage.storeName);
+                    const request = objectStore.openCursor();
+                    const result = {};
+        
+                    return new Promise((resolve, reject) => {
+                        request.onsuccess = (event) => {
+                            const cursor = event.target.result;
+                            if (cursor) {
+                                result[cursor.key] = cursor.value.value;
+                                cursor.continue();
+                            } else {
+                                resolve(JSON.stringify(result)); // Resolve the final JSON string of all stored data
+                            }
+                        };
+                        request.onerror = () => reject(request.error);
+                    });
+                });
+            }
+        
+            // Loads data from a JSON string into the store
+            loads(jsonString = '{}') {
+                const entries = Object.entries(JSON.parse(jsonString));
+                if (entries.length === 0) return Promise.resolve();
+        
+                return this.model.getDB().then(db => {
+                    const transaction = db.transaction([SingletonIndexedDBStorage.storeName], 'readwrite');
+                    const objectStore = transaction.objectStore(SingletonIndexedDBStorage.storeName);
+        
+                    return Promise.all(entries.map(([key, value]) => {
+                        return new Promise((resolve, reject) => {
+                            const request = objectStore.put({ id: key, value: value });
+                            request.onsuccess = () => {
+                                resolve();
+                            };
+                            request.onerror = () => reject(request.error);
+                        });
+                    }));
+                }).then(() => {
+                    // console.log('All data has been loaded into the database');
+                }).catch(error => {
+                    console.error('Error loading data into the database:', error);
+                });
+            }
+        }
+
         class SingletonFastAPIStorageController extends SingletonStorageController {
             constructor(apiBaseUrl = '') {
                 super();
@@ -227,7 +594,7 @@
             async set(key, value) {
                 // @api.post("/store/set/")
                 try {
-                    const response = await fetch(`${this.apiBaseUrl}/store/set/`, {
+                    const response = await fetch(`${this.apiBaseUrl}/store/set/${key}`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -358,68 +725,293 @@
         }
 
         class SingletonKeyValueStorage extends SingletonStorageController {
-            constructor() {
+            constructor(version_controll=false) {
                 super();
-                // this.js_backend();
-                this.fastapi_backend();
+                this.version_controll = version_controll;
+                this.conn = null;
+                this.js_backend();
+            }
+        
+            _switch_backend(name = 'js', ...args) {
+                this.event_dispa = new EventDispatcherController();
+                this._hist = new KeysHistoryController();
+                this._verc = new LocalVersionController();
+                const backs = {
+                    'js': () => new SingletonJavascriptDictStorageController(new SingletonJavascriptDictStorage()),
+                    'fastapi': () => new SingletonFastAPIStorageController()
+                };
+                const back = backs[name.toLowerCase()] || (() => null);
+                const backend_instance = back();
+                if (backend_instance === null) {
+                    throw new Error(`No backend of ${name}, available backends: ${Object.keys(backs)}`);
+                }
+                return backend_instance;
+            }
+            
+            js_backend() {
+                this.conn = this._switch_backend('js');
+            }
+            fastapi_backend() {
+                this.conn = this._switch_backend('fastapi');
+            }
+        
+            _print(msg) {
+                console.log(`[${this.constructor.name}]: ${msg}`);
+            }
+        
+            add_slave(slave, event_names = ['set', 'delete']) {
+                console.log(`add a slave with events of ${event_names}`);
+                if (!slave.uuid) {
+                    try {
+                        slave.uuid = this.conn._randuuid();
+                    } catch (e) {
+                        this._print(`Cannot set uuid to ${slave}. Skipping this slave.`);
+                        return false;
+                    }
+                }
+                for (const event_name of event_names) {
+                    if (typeof slave[event_name] === 'function') {
+                        this.event_dispa.set_event(event_name, slave[event_name].bind(slave), slave.uuid);
+                    } else {
+                        this._print(`No function "${event_name}" in ${slave}. Skipping it.`);
+                    }
+                }
+                return true;
+            }
+        
+            delete_slave(slave) {
+                this.event_dispa.delete_event(slave.uuid);
+            }
+        
+            _edit_local(func_name, key = null, value = null) {
+                if (!['set', 'delete', 'clean', 'load', 'loads'].includes(func_name)) {
+                    this._print(`No function "${func_name}". Returning.`);
+                    return;
+                }
+                this._hist.reset();
+                const func = this.conn[func_name].bind(this.conn);
+                const args = [key, value].filter(x => x !== null);
+                return func(...args);
             }
 
-            js_backend() { this.client = new SingletonVueStorageController(new SingletonVueStorage()); }
-            fastapi_backend() { this.client = new SingletonFastAPIStorageController(''); }
+            _edit(func_name, key = null, value = null) {
+                const args = [key, value].filter(x => x !== null);
+                const res = this._edit_local(func_name,key,value);
+                // this.event_dispa.dispatch(func_name, ...args)
 
-            exists(key) { return this.client.exists(key); }
-            set(key, value) { this.client.set(key, value); }
-            get(key) { return this.client.get(key); }
-            delete(key) { this.client.delete(key); }
-            keys(pattern = '*') { return this.client.keys(pattern); }
-            clean() { this.client.clean(); }
-            dump(jsonPath) { this.client.dump(jsonPath); }
-            load(jsonPath) { this.client.load(jsonPath); }
-            dumps() { return this.client.dumps(); }
-            loads(jsonStr) { this.client.loads(jsonStr); }
+                const version = this.get_current_version();
+                this.event_dispa.async_dispatch(func_name, ...args).catch(e=>{
+                    this.revert_operations_untill(version);
+                });
+                return res;
+            }
+        
+            _try_edit_error(args) {
+                if(this.version_controll){                    
+                    const func = args[0];
+                    if (func === 'set') {
+                        const [_, key, value] = args;
+                        let revert = null;
+                        if (this.exists(key)) {
+                            revert = [func, key, this.get(key)];
+                        } else {
+                            revert = ['delete', key];
+                        }
+                        this._verc.add_operation(args, revert);
+                    } else if (func === 'delete') {
+                        const [_, key] = args;
+                        const revert = ['set', key, this.get(key)];
+                        this._verc.add_operation(args, revert);
+                    } else if (['clean', 'load', 'loads'].includes(func)) {
+                        const revert = ['loads', this.dumps()];
+                        this._verc.add_operation(args, revert);
+                    }            
+                }
+                
+                try {
+                    this._edit(...args);
+                    return true;
+                } catch (e) {
+                    this._print(e);
+                    return false;
+                }
+            }
+        
+            revert_one_operation() {
+                this._verc.revert_one_operation(revert => this._edit_local(...revert));
+            }
+        
+            get_current_version() {
+                const vs = this._verc.get_versions();
+                return vs.length === 0 ? null : vs[vs.length - 1];
+            }
+        
+            revert_operations_untill(opuuid) {
+                this._verc.revert_operations_untill(opuuid, revert => this._edit_local(...revert));
+            }
+        
+            // True or False (in case of error)
+            set(key, value) { return this._try_edit_error(['set', key, value]); }
+            delete(key) { return this._try_edit_error(['delete', key]); }
+            clean() { return this._try_edit_error(['clean']); }
+            load(json_path) { return this._try_edit_error(['load', json_path]); }
+            loads(json_str) { return this._try_edit_error(['loads', json_str]); }
+        
+            _try_obj_error(func) {
+                try {
+                    return func();
+                } catch (e) {
+                    this._print(e);
+                    return null;
+                }
+            }
+        
+            // Object or None (in case of error)
+            exists(key) { return this._try_obj_error(() => this.conn.exists(key)); }
+            keys(regx = '*') { return this._try_obj_error(() => this.conn.keys(regx)); }
+            get(key) { return this._try_obj_error(() => this.conn.get(key)); }
+            dumps() { return this._try_obj_error(() => this.conn.dumps()); }
+            dump(json_path) { return this._try_obj_error(() => this.conn.dump(json_path)); }
         }
-        // Tests for SingletonKeyValueStorage
-        async () => {
-            console.log("Testing SingletonKeyValueStorage...");
+        
+        // Tests for SingletonKeyValueStorage 
+        class Tests {
+            constructor() {
+                this.store = new SingletonKeyValueStorage();
+            }
+        
+            test_all(num = 1) {
+                this.test_js(num);
+            }
+        
+            test_js(num = 1) {
+                this.store.js_backend();
+                for (let i = 0; i < num; i++) this.test_all_cases();
+            }
+        
+            test_all_cases() {
+                this.test_set_and_get();
+                this.test_exists();
+                this.test_delete();
+                this.test_keys();
+                this.test_get_nonexistent();
+                this.test_dump_and_load();
+                this.test_version();
+                this.test_slaves();
+            }
+        
+            test_set_and_get() {
+                this.store.set('test1', { data: 123 });
+                console.assert(JSON.stringify(this.store.get('test1')) === JSON.stringify({ data: 123 }),
+                    "The retrieved value should match the set value.");
+            }
+        
+            test_exists() {
+                this.store.set('test2', { data: 456 });
+                console.assert(this.store.exists('test2') === true, "Key should exist after being set.");
+            }
+        
+            test_delete() {
+                this.store.set('test3', { data: 789 });
+                this.store.delete('test3');
+                console.assert(this.store.exists('test3') === false, "Key should not exist after being deleted.");
+            }
+        
+            test_keys() {
+                this.store.set('alpha', { info: 'first' });
+                this.store.set('abeta', { info: 'second' });
+                this.store.set('gamma', { info: 'third' });
+                const expected_keys = ['alpha', 'abeta'];
+                console.assert(
+                    JSON.stringify(this.store.keys('a*').sort()) === JSON.stringify(expected_keys.sort()),
+                    "Should return the correct keys matching the pattern."
+                );
+            }
+        
+            test_get_nonexistent() {
+                console.assert(this.store.get('nonexistent') === null, "Getting a non-existent key should return null.");
+            }
+        
+            test_dump_and_load() {
+                const raw = {
+                    "test1": { "data": 123 },
+                    "test2": { "data": 456 },
+                    "alpha": { "info": "first" },
+                    "abeta": { "info": "second" },
+                    "gamma": { "info": "third" }
+                };
+        
+                this.store.clean();
+                console.assert(this.store.dumps() === '{}', "Should return the correct keys and values.");
+        
+                this.store.clean();
+                this.store.loads(JSON.stringify(raw));
+                console.assert(JSON.stringify(JSON.parse(this.store.dumps())) === JSON.stringify(raw),
+                    "Should return the correct keys and values.");
+            }
+        
+            test_slaves() {
+                if (this.store.conn.constructor.name === 'SingletonPythonDictStorageController') return;
+        
+                const store2 = new SingletonKeyValueStorage();
+                this.store.add_slave(store2);
+        
+                this.store.set('alpha', { info: 'first' });
+                this.store.set('abeta', { info: 'second' });
+                this.store.set('gamma', { info: 'third' });
+                this.store.delete('abeta');
+        
+                console.assert(
+                    JSON.stringify(JSON.parse(this.store.dumps())) === JSON.stringify(JSON.parse(store2.dumps())),
+                    "Should return the correct keys and values."
+                );
+            }
+        
+            test_version() {
+                this.store.version_controll = true;
+                this.store.clean();
+                this.store.set('alpha', { info: 'first' });
+                const data = this.store.dumps();
+                const version = this.store.get_current_version();
+        
+                this.store.set('abeta', { info: 'second' });
+                this.store.set('gamma', { info: 'third' });
+                this.store.revert_operations_untill(version);
+        
+                console.assert(
+                    JSON.stringify(JSON.parse(this.store.dumps())) === JSON.stringify(JSON.parse(data)),
+                    "Should return the same keys and values."
+                );
+            }
+        }
+        
+        // Running tests
+        // new Tests().test_all();
 
-            const storage = new SingletonKeyValueStorage();
+        // Test local store with server slave
+        // const local_s = new SingletonKeyValueStorage(true);
+        // const server_s = new SingletonKeyValueStorage(false);
+        // server_s.fastapi_backend();
 
-            // Test 1: Set and Get
-            await storage.set('key1', { data: 'value1' });
-            const value1 = await storage.get('key1');
-            console.assert(JSON.stringify(value1) === JSON.stringify({ data: 'value1' }), 'Test 1 Failed: Set or Get does not work correctly');
-
-            // Test 2: Exists
-            const exists1 = await storage.exists('key1');
-            const exists2 = await storage.exists('key2');
-            console.assert(exists1 === true, 'Test 2 Failed: Exists does not return true for existing key');
-            console.assert(exists2 === false, 'Test 2 Failed: Exists does not return false for non-existing key');
-
-            // Test 3: Delete
-            await storage.delete('key1');
-            const valueAfterDelete = await storage.get('key1');
-            console.assert(valueAfterDelete === null, 'Test 3 Failed: Delete does not remove the key properly');
-
-            // Test 4: Keys
-            await storage.set('test1', { data: '123' });
-            await storage.set('test2', { data: '456' });
-            await storage.set('something', { data: '789' });
-            const keys = await storage.keys('test*');
-            console.log(keys);
-            console.assert(keys.includes('test1') && keys.includes('test2') && keys.length === 2, 'Test 4 Failed: Keys does not filter correctly');
-
-            // Test 5: Clean
-            await storage.clean();
-            const keysAfterClean = await storage.keys('*');
-            console.assert(keysAfterClean.length === 0, 'Test 5 Failed: Clean does not clear all keys');
-
-            console.log("All tests completed.");
-        };
+        // local_s.add_slave(server_s);
+        // local_s.set('1',{1:123})
+        // local_s.delete('1')
+        
     </script>
 
     <!-- main Part -->
     <script>
-        const storage = new SingletonKeyValueStorage();
+        const { createApp, ref, computed } = Vue;
+        
+        const storage = new SingletonKeyValueStorage(true);
+        storage.js_backend();
+        
+        const server_storage = new SingletonKeyValueStorage(false);
+        server_storage.fastapi_backend();
+        server_storage.keys()
+
+        storage.add_slave(server_storage);
+
         const gen_uuid = (prefix = '') => {
             return prefix + 'xxxx-xxxx-xxxx-xxxx-xxxx'.replace(/x/g, function () {
                 return Math.floor(Math.random() * 16).toString(16);
@@ -427,219 +1019,99 @@
         }
         const get_now = () => new Date().toISOString();
 
-        {            
-            storage.load_local_storage = () => {
-                // const data = localStorage.getItem('single-file-vue-chat');
-                // if (data) {
-                //     storage.loads(atob(data));
-                //     return true;
-                // }
-                return false;
+        storage.load_local_storage = () => {
+            const data = localStorage.getItem('single-file-vue-chat');
+            if (data) {
+                storage.loads(atob(data));
+                return true;
             }
+            return false;
+        }
 
-            storage.save_local_storage = () => {
-                // localStorage.setItem('single-file-vue-chat', btoa(storage.dumps()));
-            }
-            storage.new_chat = async () => {
-                const uuid = `Chat:${gen_uuid()}`;
-                await storage.set(uuid, { title: `Title:${uuid}`, msg_uuids: [], timestamp: get_now(), uuid: uuid });
-                return await storage.get(uuid);
-            };
-            storage.del_chat = async (uuid) => {
-                const c = await storage.get_chat(uuid);
-                c?.msg_uuids.forEach(async (m) => await storage.del_msg(m));
-                const cg = await storage.keys(`Config:${uuid}:*`);
-                cg.forEach(async (k) => await storage.delete(k));
-                await storage.delete(uuid);
-            }
-            storage.get_chat = async (uuid) => await storage.get(uuid);
-            storage.get_chat_msgs = async (chat_uuid) => { return await storage.all_msgs(chat_uuid) }
-            // storage.all_chat = async (uuid) => { return (await storage.keys('Chat:*')).map(k => storage.get_chat(k)) };        
+        storage.save_local_storage = () => {
+            localStorage.setItem('single-file-vue-chat', btoa(storage.dumps()));
+        }
+        storage.new_chat = () => {
+            const uuid = `Chat:${gen_uuid()}`;
+            storage.set(uuid, { title: `Title:${uuid}`, msg_uuids: [], timestamp: get_now(), uuid: uuid });
+            return storage.get(uuid);
+        };
+        storage.del_chat = (uuid) => {
+            storage.get_chat(uuid)?.msg_uuids.forEach(m => storage.del_msg(m));
+            storage.keys(`Config:${uuid}:*`).map(k => storage.delete(k));
+            storage.delete(uuid);
+        }
+        storage.get_chat = (uuid) => storage.get(uuid);
+        storage.get_chat_msgs = (chat_uuid) => { return { msgs: storage.all_msgs(chat_uuid) } }
+        storage.all_chat = (uuid) => { return storage.keys('Chat:*').map(k => storage.get_chat(k)) };
 
-            storage.get_msg = async (uuid) => await storage.get(uuid);
-            storage.add_msg = async (chat_uuid, { role, content }) => {
-                const uuid = `Message:${gen_uuid()}`;
-                const chat = await storage.get_chat(chat_uuid);
-                chat.msg_uuids.push(uuid);
-                await storage.set(chat.uuid, { ...chat });
-                await storage.set(uuid, { role: role, content: content, timestamp: get_now(), uuid: uuid, chat: chat_uuid });
-            };
-            storage.add_img = async (chat_uuid, { role, content }) => {
-                const uuid = `Message:${gen_uuid()}`;
-                const chat = await storage.get_chat(chat_uuid);
-                chat.msg_uuids.push(uuid);
-                await storage.set(chat.uuid, { ...chat });
-                await storage.set(uuid, { role: role, content: content, timestamp: get_now(), uuid: uuid, chat: chat_uuid, is_img: true });
-            };
-            storage.del_msg = async (msg_uuid) => {
-                const msg = await storage.get_msg(msg_uuid);
-                const chat = await storage.get_chat(msg.chat);
-                chat.msg_uuids = chat.msg_uuids.filter(m_uuid => m_uuid != msg_uuid);
-                await storage.delete(msg_uuid);
-            };
-            storage.all_msgs = async (chat_uuid) => {
-                const chat = await storage.get_chat(chat_uuid);
-                if(!chat)return [];
-                const msgs = await Promise.all(await chat.msg_uuids.map(m_uuid => storage.get_msg(m_uuid)));
-                return msgs;
-            };
+        storage.get_msg = (uuid) => storage.get(uuid);
+        storage.add_msg = (chat_uuid, { role, content }) => {
+            const uuid = `Message:${gen_uuid()}`;
+            storage.get_chat(chat_uuid).msg_uuids.push(uuid);
+            storage.set(uuid, { role: role, content: content, timestamp: get_now(), uuid: uuid, chat: chat_uuid });
+        };
+        storage.add_img = (chat_uuid, { role, content }) => {
+            const uuid = `Message:${gen_uuid()}`;
+            storage.get_chat(chat_uuid).msg_uuids.push(uuid);
+            storage.set(uuid, { role: role, content: content, timestamp: get_now(), uuid: uuid, chat: chat_uuid, is_img: true });
+        };
+        storage.del_msg = (msg_uuid) => {
+            const msg = storage.get_msg(msg_uuid);
+            const chat = storage.get_chat(msg.chat);
+            chat.msg_uuids = chat.msg_uuids.filter(m_uuid => m_uuid != msg_uuid);
+            storage.delete(msg_uuid);
+        };
+        storage.all_msgs = (chat_uuid) => {
+            const chat = storage.get_chat(chat_uuid);
+            return chat ? chat.msg_uuids.map(m_uuid => storage.get_msg(m_uuid)) : [];
+        };
 
-            storage.set_chat_config = async (chat_uuid, name, val, what) => {
-                await storage.set(`Config:${chat_uuid}:${name}`, { name: name, val: val, what: what, type: typeof (val) });
-                return await storage.get_chat_config(chat_uuid, name);
-            }
-            storage.get_chat_config = async (chat_uuid, name) => await storage.get(`Config:${chat_uuid}:${name}`);
-            storage.get_chat_configs = async (chat_uuid) => await storage.keys(`Config:${chat_uuid}:*`).map(k => storage.get(k));
+        storage.set_chat_config = (chat_uuid, name, val, what) => {
+            storage.set(`Config:${chat_uuid}:${name}`, { name: name, val: val, what: what, type: typeof (val) });
+            return storage.get_chat_config(chat_uuid, name);
+        }
+        storage.get_chat_config = (chat_uuid, name) => storage.get(`Config:${chat_uuid}:${name}`);
+        storage.get_chat_configs = (chat_uuid) => storage.keys(`Config:${chat_uuid}:*`).map(k => storage.get(k));
 
-            storage.firstchat = async (title = 'Hello!') => {
-                const chat = await storage.new_chat();
-                if (title) chat.title = title;
-                else chat.title = chat.uuid;
-                await storage.add_msg(chat.uuid, { role: 'user', content: 'hi' });
-                await storage.add_msg(chat.uuid, { role: 'assistant', content: "I'm ready to assist you. What do you need help with?" });
+        storage.firstchat = (title = 'Hello!') => {
+            const chat = storage.new_chat();
+            if (title) chat.title = title;
+            else chat.title = chat.uuid;
+            storage.add_msg(chat.uuid, { role: 'user', content: 'hi' });
+            storage.add_msg(chat.uuid, { role: 'assistant', content: "I'm ready to assist you. What do you need help with?" });
 
-                await storage.set_chat_config(chat.uuid, 'sysp', 'You are a helpful assistant.', 'System Prompt');
-                await storage.set_chat_config(chat.uuid, 'modelname', 'gpt-4o-mini', 'Model Name');
-                await storage.set_chat_config(chat.uuid, 'sendlast', 4, 'Send last messages');
-                await storage.set_chat_config(chat.uuid, 'url', 'https://api.openai.com/v1/chat/completions', 'API URL');
-                return chat.uuid;
-            }
-            
+            storage.set_chat_config(chat.uuid, 'sysp', 'You are a helpful assistant.', 'System Prompt');
+            storage.set_chat_config(chat.uuid, 'modelname', 'gpt-4o-mini', 'Model Name');
+            storage.set_chat_config(chat.uuid, 'sendlast', 4, 'Send last messages');
+            storage.set_chat_config(chat.uuid, 'url', 'https://api.openai.com/v1/chat/completions', 'API URL');
+            return chat.uuid;
         }
 
         const app = createApp({
             setup() {
-
-                const selected_chat = ref({ title: `null`, msg_uuids: [], timestamp: get_now(), uuid: null });
-                const set_selected_chat = (c) => {
-                    selected_chat.value.title=c.title;
-                    selected_chat.value.msg_uuids=c.msg_uuids;
-                    selected_chat.value.timestamp=c.timestamp;
-                    selected_chat.value.uuid=c.uuid;
-                }
-
-                class HomeViewModel{
-                    constructor(){
-                        this.all_chats=ref([]);
-                    }
-                    async load_all_chat(){
-                        const res = await storage.keys('Chat:*');
-                        const data = res.map(async (k) => {return await storage.get_chat(k)});
-                        this.all_chats.value.splice(0);
-                        (await Promise.all(data)).forEach(e=>this.all_chats.value.push(e));
-                    }
-                    async change_selected_chat(e){
-                        set_selected_chat(await storage.get_chat(e.value.uuid));
-                    }
-                    
-                    async new_chat(){
-                        const uuid = await storage.firstchat(null);
-                        const c = await storage.get_chat(uuid);
-                        set_selected_chat(c);
-                        await this.load_all_chat();
-                    }
-
-                    async del_chat(){
-                        await storage.del_chat(selected_chat.value.uuid);
-                        this.load_all_chat().then(async ()=>{                            
-                            const cs = this.all_chats.value.filter(c=>c).map(c=>c.uuid).pop();
-                            if(cs){                            
-                                set_selected_chat(await storage.get_chat(cs));
-                            }
-                            else{
-                                set_selected_chat({ title: `null`, msg_uuids: [], timestamp: get_now(), uuid: null })
-                            }
-                        }
-                        )
-                    }
-                }
-                const home_GUI_params = new HomeViewModel();
-
-                class ChatViewModel{
-                    constructor(){
-                        this.all_msgs = ref([]);
-                    }
-                    async get_all_msgs(){
-                        this.all_msgs.value.splice(0);
-                        const ms = await storage.get_chat_msgs(selected_chat.value.uuid);
-                        ms.forEach(e=>this.all_msgs.value.push(e));
-                        ms.push(ai_message.value);
-                        console.log(ms);
-                        return ms;
-                    }
-                    async del_msg(msg){
-                        await storage.del_msg(msg.uuid);
-                    }
-                    // <!-- <p-tabpanel value="1">
-                    //     <ul class="text-base">
-                    //         <hr>
-                    //         <li v-for="msg in [...storage.get_chat_msgs(selected_chat.uuid).msgs,ai_message]">
-                    //             <div v-if="msg.content&&msg.content.length>0">
-                    //                 <div class="markdown-body">
-                    //                     <div v-if="msg.is_img">
-                    //                         <p class="font-bold">{{msg.role}} :</p><img
-                    //                             :src="`data:image/jpeg;base64,${msg.content}`">
-                    //                     </div>
-                    //                     <div v-else v-html="markdown_config.render(`**${msg.role}** : ${msg.content}`)">
-                    //                     </div>
-                    //                 </div>
-                    //                 <div class="flex justify-end">
-                    //                     <i class="pi pi-replay hover:text-blue-500 hover:scale-110 transition duration-200"
-                    //                         @click="history_repush(msg)"></i>
-                    //                     <i class="pi pi-trash pi pi-replay hover:text-blue-500 hover:scale-110 transition duration-200"
-                    //                         @click="()=>storage.del_msg(msg.uuid)"></i>
-                    //                     <span class="italic text-xs">{{msg.timestamp}}</span>
-                    //                 </div>
-                    //                 <hr>
-                    //             </div>
-                    //         </li>
-                    //     </ul><br>
-                    //     <hr>
-                    //     <hr><br>
-
-                    //     <div class="flex items-center space-x-2 p-2 border border-gray-300 rounded-lg shadow-sm">
-                    //         <p-inputtext v-model="user_message.content" class="w-full"
-                    //             placeholder="Type something for AI..."></p-inputtext>
-                    //         <p-button label="Send" @click="sendmsg"></p-button>
-                    //     </div>
-
-                    //     <div class="flex items-center space-x-2 p-2 border border-gray-300 rounded-lg shadow-sm">
-                    //         <div>
-                    //             <span class="font-medium">Image:</span>
-                    //             <p-toggleswitch v-model="image_on" class="ml-2"></p-toggleswitch>
-                    //         </div>
-                    //         <div v-if="image_on">
-                    //             <input type="file" name="test" onchange="previewFile(this)" accept="image/*">
-                    //             <img id="preview">
-                    //         </div>
-                    //     </div>
-
-                    // </p-tabpanel> -->
-                }
-                const chat_GUI_params = new ChatViewModel();
-                window.chat_GUI_params = chat_GUI_params;
-
                 if (!storage.load_local_storage()) {
                     storage.set_chat_config('Global', 'apikey', 'sk-', 'API Key');
-                    storage.firstchat().then(() => {
-                        home_GUI_params.load_all_chat();
-                    });
+                    storage.firstchat();
                 }
-                home_GUI_params.load_all_chat();
-                window.home_GUI_params = home_GUI_params;
 
                 const commands = ref({});
-                // const selected_chat = ref(storage.all_chat[0]);
-                storage.all_chat = computed({
-                    async get() { return (await storage.keys('Chat:*')).map(k => storage.get_chat(k)) }
-                });               
+                const selected_chat = ref(storage.all_chat()[0]);
                 selected_chat.get = () => selected_chat.value;
+                
+                storage.set_chat_config('Global', 'darkmode', false, 'Darkmode');
 
-                storage.set_chat_config('Global', 'darkmode', true, 'Darkmode');
-                const command_darkmode = () => document.getElementsByTagName('html')[0].classList.toggle('app-dark');
+                const command_darkmode = () => {
+                    document.getElementsByTagName('html')[0].classList.toggle('app-dark');
+                    storage.set_chat_config('Global', 'darkmode', 
+                            !storage.get_chat_config('Global', 'darkmode').val, 'Darkmode');
+                };
                 command_darkmode();
 
-                const get_config = async(name) => await storage.get_chat_config(selected_chat.get()?.uuid, name)?.val;
+                const get_config = (name) => storage.get_chat_config(selected_chat.get()?.uuid, name)?.val;
+                const get_functions = () => {
+                    return [];
+                }
 
                 const user_message = ref({ role: 'user', content: '' });
                 const ai_message = ref({ role: 'assistant', content: '' });
@@ -649,8 +1121,8 @@
                     linkify: true, xhtmlOut: true, html: true, breaks: true,
                 });
 
-                const history_repush = async(msg) => {
-                    await storage.del_msg(msg.uuid)
+                const history_repush = (msg) => {
+                    storage.del_msg(msg.uuid)
                     user_message.value.content = msg.content;
                     sendmsg();
                 }
@@ -664,10 +1136,12 @@
                     toast.add({ severity: 'error', summary: 'Error', detail: msg, life: life });
                 };
 
-                const openaibody = async(sysp = null) => {
+                const openaibody = (sysp = null) => {
                     const body = { model: get_config('modelname'), stream: true }
+                    body.functions = get_functions();
+                    body.function_call = "auto";
                     body.messages = [{ role: 'system', content: get_config('sysp') },
-                    ...await storage.get_chat_msgs(selected_chat.get()?.uuid)];
+                    ...storage.get_chat_msgs(selected_chat.get()?.uuid)?.msgs];
                     if (!sysp) sysp = body.messages[0];
 
                     body.messages = [sysp, ...body.messages.filter(m => m.timestamp).slice(-parseInt(get_config('sendlast')))]
@@ -679,10 +1153,10 @@
                     return JSON.stringify(body);
                 }
 
-                const headers = async() => {
+                const headers = () => {
                     return {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${await storage.get_chat_config('Global', 'apikey').val}`
+                        'Authorization': `Bearer ${storage.get_chat_config('Global', 'apikey').val}`
                     }
                 };
                 const openaichat = (target_message = null, sysp = null, at_end = null) => {
@@ -712,7 +1186,7 @@
                                 start(controller) {
                                     function push() {
                                         // Read from the stream
-                                        reader.read().then(async ({ done, value }) => {
+                                        reader.read().then(({ done, value }) => {
                                             // When no more data needs to be consumed, close the stream
                                             if (done) {
                                                 controller.close();
@@ -725,7 +1199,7 @@
                                                 if (json_text === '[DONE]') {
                                                     if (at_end) at_end();
                                                     else if (target_message.get().content.length > 0) {
-                                                        await storage.add_msg(selected_chat.get().uuid, target_message.get());
+                                                        storage.add_msg(selected_chat.get().uuid, target_message.get());
                                                         target_message.get().content = '';
                                                     }
                                                     return;
@@ -757,16 +1231,16 @@
                         () => { selected_chat.get().title = tmp.content })
                 }
 
-                const sendmsg = async () => {
+                const sendmsg = () => {
                     if (image_on.value) {
                         const preview = document.getElementById('preview');
                         const base64Data = preview.src;
                         const base64Only = base64Data.split(',')[1];
-                        await storage.add_img(selected_chat.get().uuid, { role: 'user', content: base64Only });
+                        storage.add_img(selected_chat.get().uuid, { role: 'user', content: base64Only });
                         preview.src = "";
                     }
 
-                    await storage.add_msg(selected_chat.get().uuid, user_message.value);
+                    storage.add_msg(selected_chat.get().uuid, user_message.value);
                     openaichat();
 
                     if (image_on.value) {
@@ -778,12 +1252,11 @@
 
                 };
                 const storage_str = computed({
-                    async get() { return await storage.dumps(); },
-                    async set(val) { await storage.loads(val) }
+                    get() { return storage.dumps(); },
+                    set(val) { storage.loads(val) }
                 });
                 const image_on = ref(false);
                 return {
-                    home_GUI_params,chat_GUI_params,
                     storage, storage_str, selected_chat, markdown_config, image_on,
                     user_message, ai_message,
                     sendmsg, showInfo, history_repush, openaibody, get_config, command_darkmode,
@@ -823,15 +1296,6 @@
             storage.save_local_storage();
         }, 5000);
 
-    </script>
-    <script>
-        function previewFile(hoge) {
-            var fileData = new FileReader();
-            fileData.onload = (function () {
-                document.getElementById('preview').src = fileData.result;
-            });
-            fileData.readAsDataURL(hoge.files[0]);
-        }
     </script>
 </body>
 

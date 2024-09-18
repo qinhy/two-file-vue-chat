@@ -21,7 +21,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 
 def try_if_error(func):
     try:
@@ -1724,6 +1724,12 @@ class ChatRoom:
 
 store = SingletonKeyValueStorage()
 # store.mongo_backend()
+store.s3_backend(
+            bucket_name = os.environ['AWS_S3_BUCKET_NAME'],
+            aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
+            aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
+            region_name=os.environ['AWS_DEFAULT_REGION']
+        )
 
 class RESTapi:
     api = FastAPI()
@@ -1731,14 +1737,26 @@ class RESTapi:
         key: str
         value: dict = None
     
-
+    @api.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        SVG_FAVICON = """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+    <rect width="100%" height="100%" fill="#0066cc" />
+    <circle cx="8" cy="8" r="4" fill="white" />
+</svg>
+"""
+        return Response(content=SVG_FAVICON, media_type="image/svg+xml")
+    
     @api.get("/")
     def serve_html():
         return FileResponse("chat.html")
     
-    @api.post("/store/set/")
-    async def set_item(item: Item):
-        return store.set(item.key, item.value)
+    @api.post("/store/set/{key}")
+    async def set_item(key: str,item: Item):
+        success = store.set(item.key, item.value)
+        if not success:
+            raise HTTPException(status_code=500, detail="Server Error")
+        return {"set": success}
 
     @api.get("/store/get/{key}")
     async def get_item(key: str):
@@ -1747,20 +1765,21 @@ class RESTapi:
             raise HTTPException(status_code=404, detail="Item not found")
         return result
 
+    @api.get("/store/get/{key}/{timestamp}")
+    async def get_item_timestamp(key: str, timestamp: str):
+        result:Model4Basic.AbstractObj = store.get(key)
+        if result.update_time == timestamp:
+            return {"get": True}
+        else:
+            return {"get": result}
+
     @api.delete("/store/delete/{key}")
     async def delete_item(key: str):
         success = store.delete(key)
         if not success:
             raise HTTPException(status_code=404, detail="Item not found to delete")
         return {"deleted": key}
-    
-    @api.delete("/store/clean")
-    async def delete_items():
-        success = store.clean()
-        if not success:
-            raise HTTPException(status_code=404, detail="Item not found to delete")
-        return {"clean": success}
-    
+        
     @api.get("/store/exists/{key}")
     async def exists_item(key: str):
         return {"exists": store.exists(key)}
@@ -1768,13 +1787,19 @@ class RESTapi:
     @api.get("/store/keys/{pattern}")
     async def get_keys(pattern: str = '*'):
         return store.keys(pattern)
+    
+    # @api.post("/store/loads/")
+    # async def load_items(item_json: str):
+    #     store.loads(item_json)
+    #     return {"loaded": True}
 
-    @api.post("/store/loads/")
-    async def load_items(item_json: str):
-        store.loads(item_json)
-        return {"loaded": True}
-
-    @api.get("/store/dumps/")
-    async def dump_items():
-        return store.dumps()
+    # @api.get("/store/dumps/")
+    # async def dump_items():
+    #     return store.dumps()
         
+    # @api.delete("/store/clean")
+    # async def delete_items():
+    #     success = store.clean()
+    #     if not success:
+    #         raise HTTPException(status_code=404, detail="Item not found to delete")
+    #     return {"clean": success}
